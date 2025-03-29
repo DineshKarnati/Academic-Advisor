@@ -6,9 +6,9 @@ import uuid
 
 # === Config ===
 DIRECTORY_PATH = "./data"  # Folder containing Excel files
-NEO4J_URI = "neo4j+s://4f6fe39b.databases.neo4j.io"
+NEO4J_URI = ""
 NEO4J_USERNAME = "neo4j"
-NEO4J_PASSWORD = "gwJH3Rui-cD_xsHehL4dQy4WCNfgm-qjf5lb5kx1iFE"
+NEO4J_PASSWORD = ""
 
 # === Neo4j Setup ===
 driver = GraphDatabase.driver(NEO4J_URI, auth=(NEO4J_USERNAME, NEO4J_PASSWORD))
