@@ -1,6 +1,6 @@
-# 🚗 Hybrid Retrieval for RAG using Neo4j – Full Technical Draft
+# Hybrid Retrieval for RAG using Neo4j – Full Technical Draft
 
-## 📌 Objective
+## Objective
 Build a **Hybrid Retrieval system** for RAG (Retrieval-Augmented Generation) using **Neo4j** as the knowledge base. It combines:
 - **Dense Retrieval** via OpenAI embeddings + Neo4j Vector Index  
 - **Sparse Retrieval** via full-text search  
@@ -8,9 +8,9 @@ Build a **Hybrid Retrieval system** for RAG (Retrieval-Augmented Generation) usi
 
 ---
 
-## 🧱 Schema Overview
+## Schema Overview
 
-### 🗃️ Node Types
+###  Node Types
 
 | Node Label        | Description                    |
 |-------------------|--------------------------------|
@@ -44,27 +44,39 @@ Build a **Hybrid Retrieval system** for RAG (Retrieval-Augmented Generation) usi
 | HAS_TESTPROCEDURES        | Component → TestProcedures             |
 
 ---
+## PDF → Structured XML via LLM
 
-## 🛠️ Data Ingestion Flow
+### Script: `pdf_extraction.py`
+- Extracts raw text from manuals
+- Breaks long text into chunks
+- Uses GPT to output structured data with tags like:
+  ```xml
+  <problem>ac not cooling</problem>
+  <symptom>weak airflow</symptom>
+  <test><name>compressor test</name><procedure>Check pressure</procedure></test>
+- Tags are flexible; non-standard tags are stored under <additional_info>
 
-### 🔄 Script Logic
+
+## Data Ingestion Flow
+
+### Script Logic
 
 **Function:** `parse_and_insert_data(xml_content, component_name)`
-- Cleans and wraps XML using `clean_xml`
-- Maps tag names to standardized Neo4j labels using `node_similar_tags`
+- Cleans XML from LLM output
+- Maps each XML tag to Neo4j label via `tag_to_label_map`
 - Creates and links graph nodes using Cypher queries
-- Handles problem sections differently if >3 problems exist
+- Handles nested problems and long lists efficiently
 - Uses APOC for conditional logic in Cypher (dynamic merging)
 
 ---
 
-## 🧠 Embedding-Based Dense Retrieval
+## Embedding-Based Dense Retrieval
 
-### 🔍 Function: `get_openai_embedding(text)`
+### Function: `get_openai_embedding(text)`
 - **Embedding Model:** `text-embedding-3-small`
 - Converts user queries into dense vectors
 
-### 🧲 Vector Search
+### Vector Search
 
 **Function:** `vector_search(query_vector, node_label, top_k=3, threshold=0.7)`  
 - **Vector Index Name:** `vectorIndex_<NodeLabel>`  
@@ -75,7 +87,7 @@ Build a **Hybrid Retrieval system** for RAG (Retrieval-Augmented Generation) usi
 
 ---
 
-## 🔤 Sparse Retrieval (Planned)
+## Sparse Retrieval (Planned)
 
 **Function:** `sparse_search(user_query, node_label)`  
 Uses full-text search index:
@@ -85,52 +97,49 @@ CALL db.index.fulltext.queryNodes('search_<Label>', $query) YIELD node, score
 RETURN node.name, score
 ```
 
-### 🔠 Full-Text Index Template
-
-```cypher
-CREATE FULLTEXT INDEX search_<Label> FOR (n:<Label>) ON EACH [n.name];
-```
-
 ---
 
-## 🧬 Hybrid Retrieval Strategy (Planned)
+## hybrid_retriever
 
-**Function:** `merge_and_rank(dense_results, sparse_results, alpha=0.5)`  
+**Function:** `Use ThreadPoolExecutor to parallelize vector and full-text search`  
 Combines dense and sparse scores:
 
 ```python
 hybrid_score = alpha * dense_score + (1 - alpha) * sparse_score
 ```
 
-- Create `merge_and_rank()` to unify both retrieval strategies
+- Create `retrieve_data()` to unify both retrieval strategies
 - Normalize scores before combining
 - Filter by top-k if needed
-- Return sorted list for context selection
+- Merge and deduplicate results by node name
 
 ---
 
-## 🔁 User Flow Diagram
+## User Flow Diagram
 
 ```text
 [User Query]
      ↓
-[Embedding Generation]
+[Rephrasing with LLM (if chat history exists)]
      ↓
-┌───────────────┐    ┌────────────────────┐
-│ Dense Search  │    │ Sparse Search      │
-│ via Vector DB │    │ via Text Index     │
-└──────┬────────┘    └────────┬───────────┘
-       ↓                     ↓
-     [Merge & Rerank Results (hybrid_score)]
-               ↓
-     [Top-K Context to RAG (LLM)]
-               ↓
-        [Answer Generation]
-```
+[Embedding Generation using OpenAI]
+     ↓
+┌────────────────────┐     ┌────────────────────┐
+│ Dense Search        │     │ Sparse Search       │
+│ (Neo4j Vector Index)│     │ (Fulltext Lucene)   │
+└──────────┬──────────┘     └──────────┬──────────┘
+           ↓                           ↓
+     [Hybrid Merge & Rerank Scores (alpha-weighted)]
+                       ↓
+         [Deduplication & Top-K Selection]
+                       ↓
+       [Graph Expansion (Related Nodes)]
+                       ↓
+         [Final LLM Response Generation]
 
 ---
 
-## 🧪 Sample User Queries & Results
+## Sample User Queries & Results
 
 | User Query                                | Top Match Node              | Node Type   | Score |
 | ----------------------------------------- | --------------------------- | ----------- | ----- |
@@ -142,9 +151,9 @@ hybrid_score = alpha * dense_score + (1 - alpha) * sparse_score
 
 ---
 
-## 📸 Visual Graph Snapshot – Example Traversal Path
+##  Visual Graph Snapshot – Example Traversal Path
 
-### 🔍 Query: "AC not cooling"
+###  Query: "AC not cooling"
 
 **Traversal Path (Graph View):**
 ```
@@ -157,9 +166,9 @@ hybrid_score = alpha * dense_score + (1 - alpha) * sparse_score
 
 ---
 
-## ⚖️ Comparative Outcomes – Dense vs Sparse vs Hybrid
+##  Comparative Outcomes – Dense vs Sparse vs Hybrid
 
-### 🧪 Query: "Remote key not working"
+### Query: "Remote key not working"
 
 | Retrieval Mode | Top Match                      | Type    | Score | Notes                              |
 | -------------- | ------------------------------ | ------- | ----- | ---------------------------------- |
@@ -167,11 +176,11 @@ hybrid_score = alpha * dense_score + (1 - alpha) * sparse_score
 | **Dense**      | "keyless entry not responding" | Problem | 0.86  | Captures intent, loses exact token |
 | **Hybrid**     | "keyless entry malfunction"    | Problem | 0.92  | Best of both, exact + semantic     |
 
-> 🧠 **Conclusion:** Hybrid retrieval improved both relevance and clarity. It correctly inferred "remote key" refers to "keyless entry".
+> **Conclusion:** Hybrid retrieval improved both relevance and clarity. It correctly inferred "remote key" refers to "keyless entry".
 
 ---
 
-## 🚗 Real-World Query Examples (for Demo/Docs)
+## Real-World Query Examples (for Demo/Docs)
 
 | Query                                | Expected Top Match          | Node Type   | Why it's relatable         |
 | ------------------------------------ | --------------------------- | ----------- | -------------------------- |
@@ -181,30 +190,33 @@ hybrid_score = alpha * dense_score + (1 - alpha) * sparse_score
 | "Steering hard to turn"              | "low power steering fluid"  | SuspectArea | Linked to hydraulic issue  |
 | "How to remove bumper?"              | "bumper removal procedure"  | Procedures  | Practical DIY fix          |
 
-✅ **Tip:** Capture real user-like phrasing to test the robustness of your retrieval system.
+ **Tip:** Capture real user-like phrasing to test the robustness of your retrieval system.
 
 ---
+## Environment Configuration
 
-## 📊 Evaluation & Stats Template
+| Key               | Purpose                                        |
+| ----------------- | ---------------------------------------------- |
+| `NEO4J_URI`       | Neo4j DB connection URI                        |
+| `OPENAI_API_KEY`  | LLM + Embedding access                         |
+| `EMBEDDING_MODEL` | OpenAI model (default: text-embedding-3-small) |
+| `model`           | Chat model (default: gpt-4o)                   |
+| `alpha`           | Weight for hybrid scoring                      |
+| `top_k`           | Result cutoff                                  |
+| `threshold`       | Similarity threshold                           |
 
-| Metric                      | Dense Only | Sparse Only | Hybrid   |
-| --------------------------- | ---------- | ----------- | -------- |
-| Precision @5                | 0.72       | 0.65        | **0.81** |
-| Recall @5                   | 0.68       | 0.59        | **0.79** |
-| Mean Reciprocal Rank (MRR)  | 0.55       | 0.47        | **0.64** |
-| Context Relevance (1-5)     | 3.8        | 3.2         | **4.5**  |
-| Average Latency (ms)        | 180        | 110         | **220**  |
-| Node Diversity Score (1-10) | 5.6        | 4.3         | **7.9**  |
 
----
+## Function Reference
 
-## 🧰 Function Reference
-
-| Function Name           | Description                               |
-| ----------------------- | ----------------------------------------- |
-| `parse_and_insert_data` | Ingest and model XML into graph           |
-| `get_openai_embedding`  | Convert text to dense embeddings          |
-| `vector_search`         | Perform ANN vector search                 |
-| `retrieve_data`         | Run vector search across all labels       |
-| `sparse_search`         | \[Planned] BM25-based fulltext search     |
-| `merge_and_rank`        | \[Planned] Score merge for hybrid ranking |
+| Function Name                | Description                             |
+| ---------------------------- | --------------------------------------- |
+| `extract_pdf_content`        | Read PDF into plain text                |
+| `structure_content_with_llm` | Generate structured XML tags            |
+| `parse_and_insert_data`      | Create nodes and relationships in Neo4j |
+| `get_openai_embedding`       | Generate dense vector from text         |
+| `vector_search`              | Perform ANN vector search               |
+| `fulltext_search`            | Run Lucene query on text fields         |
+| `hybrid_search`              | Merge dense + sparse results            |
+| `process_top_nodes`          | Expand retrieved node context           |
+| `final_call`                 | Generate final LLM response             |
+| `rag_advisor`                | Full pipeline: input → answer           |
