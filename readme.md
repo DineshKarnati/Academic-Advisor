@@ -124,7 +124,7 @@ hybrid_score = alpha * dense_score + (1 - alpha) * sparse_score
      ↓
 [Embedding Generation using OpenAI]
      ↓
-┌────────────────────┐     ┌────────────────────┐
+┌────────────────────┐       ┌────────────────────┐
 │ Dense Search        │     │ Sparse Search       │
 │ (Neo4j Vector Index)│     │ (Fulltext Lucene)   │
 └──────────┬──────────┘     └──────────┬──────────┘
@@ -137,8 +137,9 @@ hybrid_score = alpha * dense_score + (1 - alpha) * sparse_score
                        ↓
          [Final LLM Response Generation]
 
----
 
+---
+```
 ## Sample User Queries & Results
 
 | User Query                                | Top Match Node              | Node Type   | Score |
